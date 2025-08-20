@@ -41,7 +41,7 @@ class DatabaseManager:
 
     
     def generate_part_number(self, project_type: str, year: int, subsystem: int, 
-                           item_type: str, project_id: Optional[str] = None) -> str:
+                           item_type: str) -> str:
         """
         Generate a unique part number based on the new numbering system.
         
@@ -50,17 +50,16 @@ class DatabaseManager:
         - Assemblies: 172-YR-A{SS###}
         Where YR=year, SS=subsystem (01-98, 00=full-robot, 99=misc), ###=part number (000-999)
         
-        For non-specific parts (multi-year):
-        - Parts: NFR-PROJ-P{####}
-        - Assemblies: NFR-PROJ-A{####}
-        Where PROJ=project ID, ####=part number (0000-9999)
+        For non-specific parts (multi-year, single NFR project):
+        - Parts: NFR-SS-P{####}
+        - Assemblies: NFR-SS-A{####}
+        Where SS=subsystem number (00-99), ####=part number (0000-9999)
         
         Args:
             project_type: Either '172' or 'nfr'
             year: Year for 172 projects (last 2 digits will be used)
             subsystem: Subsystem number (0-99, where 0=full-robot, 99=misc)
             item_type: Either 'part' or 'assembly'
-            project_id: Project identifier for NFR projects (required for NFR)
             
         Returns:
             Generated part number string
@@ -106,11 +105,8 @@ class DatabaseManager:
             raise RuntimeError("No available part numbers in range 000-999")
         
         else:  # nfr
-            if not project_id:
-                raise ValueError("project_id is required for NFR projects")
-            
-            # Format: NFR-PROJ-P{####} or NFR-PROJ-A{####}
-            prefix = f"NFR-{project_id}-{item_prefix}"
+            # Format: NFR-SS-P{####} or NFR-SS-A{####}
+            prefix = f"NFR-{subsystem:02d}-{item_prefix}"
             
             # Find existing part numbers with this prefix
             collection = self.parts if item_type == 'part' else self.assemblies
