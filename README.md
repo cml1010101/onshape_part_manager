@@ -57,7 +57,7 @@ success = client.update_assembly_metadata(
 
 ### Example Usage
 
-See `backend/example_usage.py` for a complete example of how to use the client to fetch and display parts and assemblies from a document.
+
 
 ### API Methods
 
