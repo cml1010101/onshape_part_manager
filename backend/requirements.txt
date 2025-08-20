@@ -1,1 +1,5 @@
 pymongo==4.6.1
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pydantic==2.10.4
