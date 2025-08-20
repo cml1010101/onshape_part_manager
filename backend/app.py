@@ -2,7 +2,7 @@
 FastAPI application for Onshape Part Manager.
 
 Provides REST API endpoints for managing projects, subsystems, parts, and assemblies.
-Uses in-memory storage for development/testing when MongoDB is not available.
+Uses MongoDB via DatabaseManager when available, falls back to in-memory storage for development.
 """
 
 from fastapi import FastAPI, HTTPException, Depends
@@ -12,6 +12,16 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import logging
 import uuid
+
+# Try to import MongoDB components
+try:
+    from database import DatabaseManager, get_database_manager
+    from datatypes import Part as DBPart, Assembly as DBAssembly, Subsystem as DBSubsystem, Project as DBProject
+    from bson import ObjectId
+    MONGODB_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"MongoDB components not available: {e}. Using in-memory storage.")
+    MONGODB_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +43,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for development
+# Database manager instance (will be None if MongoDB not available)
+db_manager: Optional[DatabaseManager] = None
+
+# In-memory storage for development (fallback when MongoDB not available)
 projects_storage: Dict[str, Dict] = {}
 
 # Pydantic models for API requests/responses
@@ -102,6 +115,10 @@ class DatabaseSummaryResponse(BaseModel):
 
 def generate_subsystem_number(project_identifier: str, project_code: str = None) -> int:
     """Generate the next available subsystem number for a project."""
+    if MONGODB_AVAILABLE and db_manager:
+        return db_manager.generate_subsystem_number(project_identifier, project_code)
+    
+    # Fallback to in-memory logic
     max_subsystem = 99 if project_identifier == '172' else 9999
     
     existing_numbers = set()
@@ -118,9 +135,157 @@ def generate_subsystem_number(project_identifier: str, project_code: str = None)
     
     raise RuntimeError(f"No available subsystem numbers in range 0-{max_subsystem}")
 
+# Database initialization
+def init_database():
+    """Initialize database connection and setup."""
+    global db_manager
+    
+    if MONGODB_AVAILABLE:
+        try:
+            db_manager = get_database_manager()
+            logger.info("Connected to MongoDB database")
+            # Test the connection
+            db_manager.list_projects(limit=1)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to connect to MongoDB: {e}. Using in-memory storage.")
+            db_manager = None
+            return False
+    else:
+        logger.info("MongoDB not available, using in-memory storage")
+        return False
+
+# Convert database objects to API response format
+def convert_db_part_to_response(part: DBPart) -> Dict:
+    """Convert database Part to API response format."""
+    return {
+        "_id": str(ObjectId()),  # Generate a fake ID for API consistency
+        "name": part.name,
+        "description": part.description,
+        "drawing": part.drawing,
+        "material": part.material,
+        "stl_file": part.stl_file,
+        "icon_file": part.icon_file
+    }
+
+def convert_db_assembly_to_response(assembly: DBAssembly) -> Dict:
+    """Convert database Assembly to API response format."""
+    return {
+        "_id": str(ObjectId()),  # Generate a fake ID for API consistency
+        "name": assembly.name,
+        "description": assembly.description,
+        "drawing": assembly.drawing,
+        "icon_file": assembly.icon_file
+    }
+
+def convert_db_subsystem_to_response(subsystem: DBSubsystem) -> Dict:
+    """Convert database Subsystem to API response format."""
+    return {
+        "_id": str(ObjectId()),  # Generate a fake ID for API consistency
+        "name": subsystem.name,
+        "subsystem_number": subsystem.subsystem_number,
+        "parts": [convert_db_part_to_response(part) for part in subsystem.parts],
+        "assemblies": [convert_db_assembly_to_response(assembly) for assembly in subsystem.assemblies]
+    }
+
+def convert_db_project_to_response(project: DBProject) -> Dict:
+    """Convert database Project to API response format."""
+    return {
+        "_id": str(ObjectId()),  # Generate a fake ID for API consistency
+        "year": project.year,
+        "identifier": project.identifier,
+        "project_code": project.project_code,
+        "name": project.name,
+        "description": project.description,
+        "subsystems": [convert_db_subsystem_to_response(subsystem) for subsystem in project.subsystems]
+    }
+
 # Initialize with some sample data
 def init_sample_data():
     """Initialize the storage with sample data matching the frontend mock."""
+    if MONGODB_AVAILABLE and db_manager:
+        # Check if we already have data in MongoDB
+        existing_projects = db_manager.list_projects()
+        if existing_projects:
+            logger.info("MongoDB already has data, skipping sample data initialization")
+            return
+        
+        # Create sample data in MongoDB
+        try:
+            # Create first project
+            project1 = DBProject(
+                year=2025,
+                identifier="172",
+                project_code="25A",
+                name="172 Project 25A",
+                description="Project 25A for the 172 team.",
+                subsystems=[
+                    DBSubsystem(
+                        name="Drivetrain",
+                        subsystem_number=1,
+                        parts=[
+                            DBPart(
+                                name="Drive Wheel",
+                                description="Main drive wheel for robot",
+                                material="Aluminum",
+                                drawing=None,
+                                stl_file=None,
+                                icon_file=None
+                            )
+                        ],
+                        assemblies=[
+                            DBAssembly(
+                                name="Gearbox Assembly",
+                                description="Main gearbox for drivetrain",
+                                drawing=None,
+                                icon_file=None
+                            )
+                        ]
+                    )
+                ]
+            )
+            
+            # Create second project
+            project2 = DBProject(
+                year=2023,
+                identifier="nfr",
+                project_code=None,
+                name="NFR Project",
+                description="The central project for all continuing CAD development.",
+                subsystems=[
+                    DBSubsystem(
+                        name="Common Components",
+                        subsystem_number=0,
+                        parts=[
+                            DBPart(
+                                name="Standard Bracket",
+                                description="Reusable mounting bracket",
+                                material="Steel",
+                                drawing=None,
+                                stl_file=None,
+                                icon_file=None
+                            )
+                        ],
+                        assemblies=[]
+                    )
+                ]
+            )
+            
+            # Save to MongoDB
+            db_manager.create_project(project1)
+            db_manager.create_project(project2)
+            logger.info("Sample data created in MongoDB")
+            
+        except Exception as e:
+            logger.error(f"Failed to create sample data in MongoDB: {e}")
+            # Fall back to in-memory storage
+            init_memory_sample_data()
+    else:
+        # Use in-memory storage
+        init_memory_sample_data()
+
+def init_memory_sample_data():
+    """Initialize in-memory storage with sample data."""
     # Create first project
     project1_id = str(uuid.uuid4())
     projects_storage[project1_id] = {
@@ -189,7 +354,8 @@ def init_sample_data():
         ]
     }
 
-# Initialize sample data
+# Initialize database and sample data
+mongodb_connected = init_database()
 init_sample_data()
 
 # API Routes
@@ -202,30 +368,75 @@ async def root():
 async def get_database_summary():
     """Get database summary with counts and all projects."""
     try:
-        projects_data = []
-        
-        for project in projects_storage.values():
-            subsystems = []
-            for subsystem in project['subsystems']:
-                parts = [PartResponse(**part) for part in subsystem['parts']]
-                assemblies = [AssemblyResponse(**assembly) for assembly in subsystem['assemblies']]
-                subsystems.append(SubsystemResponse(
-                    _id=subsystem['_id'],
-                    name=subsystem['name'],
-                    subsystem_number=subsystem['subsystem_number'],
-                    parts=parts,
-                    assemblies=assemblies
-                ))
+        if MONGODB_AVAILABLE and db_manager:
+            # Use MongoDB
+            projects_data = []
+            db_projects = db_manager.list_projects()
             
-            projects_data.append(ProjectResponse(
-                _id=project['_id'],
-                year=project['year'],
-                identifier=project['identifier'],
-                project_code=project['project_code'],
-                name=project['name'],
-                description=project['description'],
-                subsystems=subsystems
-            ))
+            for project in db_projects:
+                subsystems = []
+                for subsystem in project.subsystems:
+                    parts = [PartResponse(
+                        _id=str(ObjectId()),
+                        name=part.name,
+                        description=part.description,
+                        drawing=part.drawing,
+                        material=part.material,
+                        stl_file=part.stl_file,
+                        icon_file=part.icon_file
+                    ) for part in subsystem.parts]
+                    
+                    assemblies = [AssemblyResponse(
+                        _id=str(ObjectId()),
+                        name=assembly.name,
+                        description=assembly.description,
+                        drawing=assembly.drawing,
+                        icon_file=assembly.icon_file
+                    ) for assembly in subsystem.assemblies]
+                    
+                    subsystems.append(SubsystemResponse(
+                        _id=str(ObjectId()),
+                        name=subsystem.name,
+                        subsystem_number=subsystem.subsystem_number,
+                        parts=parts,
+                        assemblies=assemblies
+                    ))
+                
+                projects_data.append(ProjectResponse(
+                    _id=str(ObjectId()),
+                    year=project.year,
+                    identifier=project.identifier,
+                    project_code=project.project_code,
+                    name=project.name,
+                    description=project.description,
+                    subsystems=subsystems
+                ))
+        else:
+            # Use in-memory storage
+            projects_data = []
+            
+            for project in projects_storage.values():
+                subsystems = []
+                for subsystem in project['subsystems']:
+                    parts = [PartResponse(**part) for part in subsystem['parts']]
+                    assemblies = [AssemblyResponse(**assembly) for assembly in subsystem['assemblies']]
+                    subsystems.append(SubsystemResponse(
+                        _id=subsystem['_id'],
+                        name=subsystem['name'],
+                        subsystem_number=subsystem['subsystem_number'],
+                        parts=parts,
+                        assemblies=assemblies
+                    ))
+                
+                projects_data.append(ProjectResponse(
+                    _id=project['_id'],
+                    year=project['year'],
+                    identifier=project['identifier'],
+                    project_code=project['project_code'],
+                    name=project['name'],
+                    description=project['description'],
+                    subsystems=subsystems
+                ))
         
         # Calculate totals
         total_parts = sum(
@@ -431,7 +642,13 @@ async def create_assembly(project_id: str, subsystem_id: str, assembly_data: Ass
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "storage": "in-memory"}
+    storage_type = "mongodb" if (MONGODB_AVAILABLE and db_manager) else "in-memory"
+    return {
+        "status": "healthy", 
+        "storage": storage_type,
+        "mongodb_available": MONGODB_AVAILABLE,
+        "mongodb_connected": db_manager is not None
+    }
 
 if __name__ == "__main__":
     import uvicorn
