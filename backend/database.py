@@ -38,55 +38,100 @@ class DatabaseManager:
         self.subsystems: Collection = self.db.subsystems
         self.projects: Collection = self.db.projects
         
-        # Counters collection for part number generation
-        self.counters: Collection = self.db.counters
-        
-        # Initialize part number counters if they don't exist
-        self._initialize_counters()
+
     
-    def _initialize_counters(self):
-        """Initialize part number counters for different project types."""
-        # Initialize counter for 172 projects if it doesn't exist
-        if not self.counters.find_one({"_id": "172_part_counter"}):
-            self.counters.insert_one({"_id": "172_part_counter", "value": 0})
-        
-        # Initialize counter for NFR project if it doesn't exist
-        if not self.counters.find_one({"_id": "nfr_part_counter"}):
-            self.counters.insert_one({"_id": "nfr_part_counter", "value": 0})
-    
-    def generate_part_number(self, project_type: str) -> str:
+    def generate_part_number(self, project_type: str, year: int, subsystem: int, 
+                           item_type: str, project_id: Optional[str] = None) -> str:
         """
-        Generate a unique part number for the given project type.
+        Generate a unique part number based on the new numbering system.
+        
+        For robot-specific parts (current year only):
+        - Parts: 172-YR-P{SS###} 
+        - Assemblies: 172-YR-A{SS###}
+        Where YR=year, SS=subsystem (01-98, 00=full-robot, 99=misc), ###=part number (000-999)
+        
+        For non-specific parts (multi-year):
+        - Parts: NFR-PROJ-P{####}
+        - Assemblies: NFR-PROJ-A{####}
+        Where PROJ=project ID, ####=part number (0000-9999)
         
         Args:
             project_type: Either '172' or 'nfr'
+            year: Year for 172 projects (last 2 digits will be used)
+            subsystem: Subsystem number (0-99, where 0=full-robot, 99=misc)
+            item_type: Either 'part' or 'assembly'
+            project_id: Project identifier for NFR projects (required for NFR)
             
         Returns:
             Generated part number string
             
         Raises:
-            ValueError: If project_type is not '172' or 'nfr'
+            ValueError: If parameters are invalid
         """
         if project_type not in ['172', 'nfr']:
             raise ValueError("project_type must be either '172' or 'nfr'")
         
-        counter_id = f"{project_type}_part_counter"
+        if item_type not in ['part', 'assembly']:
+            raise ValueError("item_type must be either 'part' or 'assembly'")
         
-        # Atomically increment the counter and get the new value
-        result = self.counters.find_one_and_update(
-            {"_id": counter_id},
-            {"$inc": {"value": 1}},
-            return_document=pymongo.ReturnDocument.AFTER
-        )
+        if subsystem < 0 or subsystem > 99:
+            raise ValueError("subsystem must be between 0 and 99")
         
-        if not result:
-            raise RuntimeError(f"Counter {counter_id} not found")
+        item_prefix = 'P' if item_type == 'part' else 'A'
         
-        # Format part number based on project type
         if project_type == '172':
-            return f"172-{result['value']:04d}"
+            # Format: 172-YR-P{SS###} or 172-YR-A{SS###}
+            year_suffix = str(year)[-2:]  # Last 2 digits of year
+            prefix = f"172-{year_suffix}-{item_prefix}{subsystem:02d}"
+            
+            # Find existing part numbers with this prefix
+            collection = self.parts if item_type == 'part' else self.assemblies
+            existing_numbers = set()
+            
+            # Search for parts/assemblies with names starting with this prefix
+            for doc in collection.find({"name": {"$regex": f"^{prefix}"}}):
+                name = doc.get("name", "")
+                if name.startswith(prefix) and len(name) >= len(prefix) + 3:
+                    try:
+                        number = int(name[len(prefix):len(prefix)+3])
+                        existing_numbers.add(number)
+                    except ValueError:
+                        continue
+            
+            # Find the first available number (0-999)
+            for i in range(1000):
+                if i not in existing_numbers:
+                    return f"{prefix}{i:03d}"
+            
+            raise RuntimeError("No available part numbers in range 000-999")
+        
         else:  # nfr
-            return f"NFR-{result['value']:04d}"
+            if not project_id:
+                raise ValueError("project_id is required for NFR projects")
+            
+            # Format: NFR-PROJ-P{####} or NFR-PROJ-A{####}
+            prefix = f"NFR-{project_id}-{item_prefix}"
+            
+            # Find existing part numbers with this prefix
+            collection = self.parts if item_type == 'part' else self.assemblies
+            existing_numbers = set()
+            
+            # Search for parts/assemblies with names starting with this prefix
+            for doc in collection.find({"name": {"$regex": f"^{prefix}"}}):
+                name = doc.get("name", "")
+                if name.startswith(prefix) and len(name) >= len(prefix) + 4:
+                    try:
+                        number = int(name[len(prefix):len(prefix)+4])
+                        existing_numbers.add(number)
+                    except ValueError:
+                        continue
+            
+            # Find the first available number (0-9999)
+            for i in range(10000):
+                if i not in existing_numbers:
+                    return f"{prefix}{i:04d}"
+            
+            raise RuntimeError("No available part numbers in range 0000-9999")
     
     def close(self):
         """Close the database connection."""
