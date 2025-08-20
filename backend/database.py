@@ -3,6 +3,16 @@ Database access layer for onshape_part_manager.
 
 Provides MongoDB integration for Part, Assembly, Subsystem, and Project datatypes.
 Includes part number generation and project management functionality.
+
+Part Numbering System:
+- 172 projects: 172-{project_code}-P{SS###} for parts, 172-{project_code}-A{SS###} for assemblies
+  Where project_code = project identifier like "24A", "25B", "25C" for competition/offseason projects
+  SS = subsystem number (00-99, where 00=full-robot, 99=miscellaneous)
+  ### = sequential part/assembly number (000-999)
+
+- NFR projects: NFR-SSSS-P{####} for parts, NFR-SSSS-A{####} for assemblies
+  Where SSSS = subsystem number (0000-9999, where 0000=full-robot, 9999=miscellaneous)
+  #### = sequential part/assembly number (0000-9999)
 """
 
 from typing import List, Optional, Union
@@ -40,15 +50,15 @@ class DatabaseManager:
         
 
     
-    def generate_part_number(self, project_type: str, year: int, subsystem: int, 
+    def generate_part_number(self, project_type: str, project_identifier: str, subsystem: int, 
                            item_type: str) -> str:
         """
         Generate a unique part number based on the new numbering system.
         
-        For robot-specific parts (current year only):
-        - Parts: 172-YR-P{SS###} 
-        - Assemblies: 172-YR-A{SS###}
-        Where YR=year, SS=subsystem (01-98, 00=full-robot, 99=misc), ###=part number (000-999)
+        For robot-specific parts (various competition/offseason projects):
+        - Parts: 172-{project_code}-P{SS###} 
+        - Assemblies: 172-{project_code}-A{SS###}
+        Where project_code=project identifier (e.g., "24A", "25B", "25C"), SS=subsystem (01-98, 00=full-robot, 99=misc), ###=part number (000-999)
         
         For non-specific parts (multi-year, single NFR project):
         - Parts: NFR-SSSS-P{####}
@@ -57,7 +67,7 @@ class DatabaseManager:
         
         Args:
             project_type: Either '172' or 'nfr'
-            year: Year for 172 projects (last 2 digits will be used)
+            project_identifier: Project code for 172 projects (e.g., "24A", "25B", "25C") or "nfr" for NFR projects
             subsystem: Subsystem number (0-99 for 172, 0-9999 for nfr, where 0=full-robot, 99/9999=misc)
             item_type: Either 'part' or 'assembly'
             
@@ -73,6 +83,11 @@ class DatabaseManager:
         if item_type not in ['part', 'assembly']:
             raise ValueError("item_type must be either 'part' or 'assembly'")
         
+        if project_type == '172':
+            # Validate project_identifier format for 172 projects (should be like "24A", "25B", etc.)
+            if not project_identifier or len(project_identifier) < 3:
+                raise ValueError("project_identifier for 172 projects must be in format like '24A', '25B', '25C'")
+            
         # Validate subsystem range based on project type
         if project_type == '172':
             if subsystem < 0 or subsystem > 99:
@@ -84,9 +99,8 @@ class DatabaseManager:
         item_prefix = 'P' if item_type == 'part' else 'A'
         
         if project_type == '172':
-            # Format: 172-YR-P{SS###} or 172-YR-A{SS###}
-            year_suffix = str(year)[-2:]  # Last 2 digits of year
-            prefix = f"172-{year_suffix}-{item_prefix}{subsystem:02d}"
+            # Format: 172-{project_code}-P{SS###} or 172-{project_code}-A{SS###}
+            prefix = f"172-{project_identifier}-{item_prefix}{subsystem:02d}"
             
             # Find existing part numbers with this prefix
             collection = self.parts if item_type == 'part' else self.assemblies
@@ -321,6 +335,24 @@ class DatabaseManager:
             project_dict['subsystems'] = subsystems
             projects.append(Project(**project_dict))
         return projects
+    
+    def get_172_project_by_code(self, project_code: str) -> Optional[Project]:
+        """Get a specific 172 project by its project code (e.g., '24A', '25B')."""
+        project_dict = self.projects.find_one({"identifier": "172", "project_code": project_code})
+        if project_dict:
+            # Convert nested subsystems back to objects
+            subsystems = []
+            for subsystem_dict in project_dict.get('subsystems', []):
+                parts = [Part(**part_dict) for part_dict in subsystem_dict.get('parts', [])]
+                assemblies = [Assembly(**assembly_dict) for assembly_dict in subsystem_dict.get('assemblies', [])]
+                
+                subsystem_dict['parts'] = parts
+                subsystem_dict['assemblies'] = assemblies
+                subsystems.append(Subsystem(**subsystem_dict))
+            
+            project_dict['subsystems'] = subsystems
+            return Project(**project_dict)
+        return None
     
     def get_nfr_project(self) -> Optional[Project]:
         """Get the NFR project (there should be only one)."""

@@ -27,7 +27,8 @@ class Subsystem:
 class Project:
     _id: str
     year: int
-    identifier: str
+    identifier: str  # "172" or "nfr"
+    project_code: str | None  # For 172 projects: "24A", "25B", "25C", etc. For NFR: None
     name: str
     description: str
     subsystems: list[Subsystem]
