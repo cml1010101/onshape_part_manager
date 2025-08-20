@@ -371,6 +371,121 @@ class DatabaseManager:
             project_dict['subsystems'] = subsystems
             return Project(**project_dict)
         return None
+    
+    def print_summary(self, detailed: bool = False):
+        """
+        Print a comprehensive summary of the database contents.
+        
+        Args:
+            detailed: If True, includes individual part and assembly names
+        """
+        print("=" * 60)
+        print("DATABASE SUMMARY")
+        print("=" * 60)
+        
+        # Get total counts
+        total_parts = self.parts.count_documents({})
+        total_assemblies = self.assemblies.count_documents({})
+        total_subsystems = self.subsystems.count_documents({})
+        total_projects = self.projects.count_documents({})
+        
+        print(f"\nTOTAL COUNTS:")
+        print(f"  Parts: {total_parts}")
+        print(f"  Assemblies: {total_assemblies}")
+        print(f"  Subsystems: {total_subsystems}")
+        print(f"  Projects: {total_projects}")
+        
+        # Get all projects
+        projects = self.list_projects()
+        
+        if not projects:
+            print("\nNo projects found in database.")
+            return
+        
+        print(f"\nPROJECTS:")
+        print("-" * 40)
+        
+        # Group projects by type
+        team_172_projects = [p for p in projects if p.identifier == "172"]
+        nfr_projects = [p for p in projects if p.identifier == "nfr"]
+        
+        # Show 172 projects
+        if team_172_projects:
+            print(f"\n172 TEAM PROJECTS ({len(team_172_projects)}):")
+            for project in sorted(team_172_projects, key=lambda x: x.project_code or ""):
+                print(f"  {project._id} ({project.project_code}) - {project.name}")
+                print(f"    Year: {project.year}")
+                print(f"    Description: {project.description}")
+                print(f"    Subsystems: {len(project.subsystems)}")
+                
+                if project.subsystems:
+                    total_project_parts = 0
+                    total_project_assemblies = 0
+                    
+                    for subsystem in project.subsystems:
+                        parts_count = len(subsystem.parts)
+                        assemblies_count = len(subsystem.assemblies)
+                        total_project_parts += parts_count
+                        total_project_assemblies += assemblies_count
+                        
+                        print(f"      {subsystem.name} (ID: {subsystem._id}): {parts_count} parts, {assemblies_count} assemblies")
+                        
+                        if detailed and (parts_count > 0 or assemblies_count > 0):
+                            if parts_count > 0:
+                                print(f"        Parts: {', '.join([p.name for p in subsystem.parts])}")
+                            if assemblies_count > 0:
+                                print(f"        Assemblies: {', '.join([a.name for a in subsystem.assemblies])}")
+                    
+                    print(f"    Total: {total_project_parts} parts, {total_project_assemblies} assemblies")
+                print()
+        
+        # Show NFR projects
+        if nfr_projects:
+            print(f"\nNFR PROJECTS ({len(nfr_projects)}):")
+            for project in nfr_projects:
+                print(f"  {project._id} - {project.name}")
+                print(f"    Year: {project.year}")
+                print(f"    Description: {project.description}")
+                print(f"    Subsystems: {len(project.subsystems)}")
+                
+                if project.subsystems:
+                    total_project_parts = 0
+                    total_project_assemblies = 0
+                    
+                    for subsystem in project.subsystems:
+                        parts_count = len(subsystem.parts)
+                        assemblies_count = len(subsystem.assemblies)
+                        total_project_parts += parts_count
+                        total_project_assemblies += assemblies_count
+                        
+                        print(f"      {subsystem.name} (ID: {subsystem._id}): {parts_count} parts, {assemblies_count} assemblies")
+                        
+                        if detailed and (parts_count > 0 or assemblies_count > 0):
+                            if parts_count > 0:
+                                print(f"        Parts: {', '.join([p.name for p in subsystem.parts])}")
+                            if assemblies_count > 0:
+                                print(f"        Assemblies: {', '.join([a.name for a in subsystem.assemblies])}")
+                    
+                    print(f"    Total: {total_project_parts} parts, {total_project_assemblies} assemblies")
+                print()
+        
+        # Show part numbering format information
+        print("PART NUMBERING FORMATS:")
+        print("-" * 40)
+        print("172 Projects (Competition/Offseason):")
+        print("  Parts:      172-{project_code}-P{SS###}")
+        print("  Assemblies: 172-{project_code}-A{SS###}")
+        print("  Where: project_code = '24A', '25B', '25C', etc.")
+        print("         SS = subsystem number (00-99, 00=full-robot, 99=misc)")
+        print("         ### = part/assembly number (000-999)")
+        print()
+        print("NFR Projects (Multi-year components):")
+        print("  Parts:      NFR-SSSS-P{####}")
+        print("  Assemblies: NFR-SSSS-A{####}")
+        print("  Where: SSSS = subsystem number (0000-9999, 0000=full-robot, 9999=misc)")
+        print("         #### = part/assembly number (0000-9999)")
+        
+        print("=" * 60)
 
 
 def get_database_manager() -> DatabaseManager:
