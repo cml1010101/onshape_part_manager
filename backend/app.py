@@ -236,7 +236,7 @@ async def get_database_summary():
                 project_id = str(project_doc["_id"])
                 
                 # Convert document to Project object
-                project = db_manager._document_to_object(project_doc, Project)
+                project = db_manager._document_to_object(project_doc, DBProject)
                 
                 subsystems = []
                 for i, subsystem in enumerate(project.subsystems):
