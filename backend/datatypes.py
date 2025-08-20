@@ -5,15 +5,17 @@ from typing import Optional
 class Part:
     name: str
     description: str
-    drawing: str
-    material: str
+    drawing: str | None
+    material: str | None
     stl_file: str | None
+    icon_file: str | None
 
 @dataclass
 class Assembly:
     name: str
     description: str
-    drawing: str
+    drawing: str | None
+    icon_file: str | None
 
 @dataclass
 class Subsystem:
