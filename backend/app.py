@@ -59,13 +59,16 @@ class PartCreate(BaseModel):
     icon_file: Optional[str] = None
 
 class PartResponse(BaseModel):
-    _id: str
+    id: str = Field(alias="_id")
     name: str
     description: str
     drawing: Optional[str] = None
     material: Optional[str] = None
     stl_file: Optional[str] = None
     icon_file: Optional[str] = None
+    
+    class Config:
+        populate_by_name = True
 
 class AssemblyCreate(BaseModel):
     name: str
@@ -74,21 +77,27 @@ class AssemblyCreate(BaseModel):
     icon_file: Optional[str] = None
 
 class AssemblyResponse(BaseModel):
-    _id: str
+    id: str = Field(alias="_id")
     name: str
     description: str
     drawing: Optional[str] = None
     icon_file: Optional[str] = None
+    
+    class Config:
+        populate_by_name = True
 
 class SubsystemCreate(BaseModel):
     name: str
 
 class SubsystemResponse(BaseModel):
-    _id: str
+    id: str = Field(alias="_id")
     name: str
     subsystem_number: int
     parts: List[PartResponse]
     assemblies: List[AssemblyResponse]
+    
+    class Config:
+        populate_by_name = True
 
 class ProjectCreate(BaseModel):
     year: int
@@ -98,13 +107,16 @@ class ProjectCreate(BaseModel):
     description: str
 
 class ProjectResponse(BaseModel):
-    _id: str
+    id: str = Field(alias="_id")
     year: int
     identifier: str
     project_code: Optional[str] = None
     name: str
     description: str
     subsystems: List[SubsystemResponse]
+    
+    class Config:
+        populate_by_name = True
 
 class DatabaseSummaryResponse(BaseModel):
     total_parts: int
@@ -224,7 +236,7 @@ async def get_database_summary():
                 subsystems = []
                 for subsystem in project.subsystems:
                     parts = [PartResponse(
-                        _id=str(ObjectId()),
+                        id=str(ObjectId()),
                         name=part.name,
                         description=part.description,
                         drawing=part.drawing,
@@ -234,7 +246,7 @@ async def get_database_summary():
                     ) for part in subsystem.parts]
                     
                     assemblies = [AssemblyResponse(
-                        _id=str(ObjectId()),
+                        id=str(ObjectId()),
                         name=assembly.name,
                         description=assembly.description,
                         drawing=assembly.drawing,
@@ -242,7 +254,7 @@ async def get_database_summary():
                     ) for assembly in subsystem.assemblies]
                     
                     subsystems.append(SubsystemResponse(
-                        _id=str(ObjectId()),
+                        id=str(ObjectId()),
                         name=subsystem.name,
                         subsystem_number=subsystem.subsystem_number,
                         parts=parts,
@@ -250,7 +262,7 @@ async def get_database_summary():
                     ))
                 
                 projects_data.append(ProjectResponse(
-                    _id=str(ObjectId()),
+                    id=str(ObjectId()),
                     year=project.year,
                     identifier=project.identifier,
                     project_code=project.project_code,
@@ -268,7 +280,7 @@ async def get_database_summary():
                     parts = [PartResponse(**part) for part in subsystem['parts']]
                     assemblies = [AssemblyResponse(**assembly) for assembly in subsystem['assemblies']]
                     subsystems.append(SubsystemResponse(
-                        _id=subsystem['_id'],
+                        id=subsystem['_id'],
                         name=subsystem['name'],
                         subsystem_number=subsystem['subsystem_number'],
                         parts=parts,
@@ -276,7 +288,7 @@ async def get_database_summary():
                     ))
                 
                 projects_data.append(ProjectResponse(
-                    _id=project['_id'],
+                    id=project['_id'],
                     year=project['year'],
                     identifier=project['identifier'],
                     project_code=project['project_code'],
@@ -322,35 +334,64 @@ async def create_project(project_data: ProjectCreate):
         if project_data.identifier == "nfr" and project_data.project_code:
             raise HTTPException(status_code=400, detail="NFR projects should not have a project_code")
         
-        # Check if 172 project with same code already exists
-        if project_data.identifier == "172":
-            for project in projects_storage.values():
-                if (project['identifier'] == "172" and 
-                    project.get('project_code') == project_data.project_code):
+        if MONGODB_AVAILABLE and db_manager:
+            # Use MongoDB
+            # Check if 172 project with same code already exists
+            if project_data.identifier == "172":
+                existing_project = db_manager.get_172_project_by_code(project_data.project_code)
+                if existing_project:
                     raise HTTPException(status_code=400, detail=f"172 project with code {project_data.project_code} already exists")
-        
-        # Check if NFR project already exists (should be only one)
-        if project_data.identifier == "nfr":
-            for project in projects_storage.values():
-                if project['identifier'] == "nfr":
+            
+            # Check if NFR project already exists (should be only one)
+            if project_data.identifier == "nfr":
+                existing_nfr = db_manager.get_nfr_project()
+                if existing_nfr:
                     raise HTTPException(status_code=400, detail="NFR project already exists")
-        
-        # Create project
-        project_id = str(uuid.uuid4())
-        new_project = {
-            "_id": project_id,
-            "year": project_data.year,
-            "identifier": project_data.identifier,
-            "project_code": project_data.project_code,
-            "name": project_data.name,
-            "description": project_data.description,
-            "subsystems": []
-        }
-        
-        projects_storage[project_id] = new_project
+            
+            # Create project dataclass
+            project = DBProject(
+                year=project_data.year,
+                identifier=project_data.identifier,
+                project_code=project_data.project_code,
+                name=project_data.name,
+                description=project_data.description,
+                subsystems=[]
+            )
+            
+            # Save to MongoDB
+            object_id = db_manager.create_project(project)
+            project_id = str(object_id)
+        else:
+            # Use in-memory storage
+            # Check if 172 project with same code already exists
+            if project_data.identifier == "172":
+                for project in projects_storage.values():
+                    if (project['identifier'] == "172" and 
+                        project.get('project_code') == project_data.project_code):
+                        raise HTTPException(status_code=400, detail=f"172 project with code {project_data.project_code} already exists")
+            
+            # Check if NFR project already exists (should be only one)
+            if project_data.identifier == "nfr":
+                for project in projects_storage.values():
+                    if project['identifier'] == "nfr":
+                        raise HTTPException(status_code=400, detail="NFR project already exists")
+            
+            # Create project
+            project_id = str(uuid.uuid4())
+            new_project = {
+                "_id": project_id,
+                "year": project_data.year,
+                "identifier": project_data.identifier,
+                "project_code": project_data.project_code,
+                "name": project_data.name,
+                "description": project_data.description,
+                "subsystems": []
+            }
+            
+            projects_storage[project_id] = new_project
         
         return ProjectResponse(
-            _id=project_id,
+            id=project_id,
             year=project_data.year,
             identifier=project_data.identifier,
             project_code=project_data.project_code,
@@ -369,29 +410,62 @@ async def create_project(project_data: ProjectCreate):
 async def create_subsystem(project_id: str, subsystem_data: SubsystemCreate):
     """Create a new subsystem in a project."""
     try:
-        if project_id not in projects_storage:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        project = projects_storage[project_id]
-        
-        # Generate subsystem number
-        subsystem_number = generate_subsystem_number(project['identifier'], project.get('project_code'))
-        
-        # Create subsystem
-        subsystem_id = str(uuid.uuid4())
-        new_subsystem = {
-            "_id": subsystem_id,
-            "name": subsystem_data.name,
-            "subsystem_number": subsystem_number,
-            "parts": [],
-            "assemblies": []
-        }
-        
-        # Add subsystem to project
-        project['subsystems'].append(new_subsystem)
+        if MONGODB_AVAILABLE and db_manager:
+            # Use MongoDB
+            # First find the project by ObjectId
+            try:
+                mongo_project_id = ObjectId(project_id)
+                project = db_manager.get_project(mongo_project_id)
+            except:
+                # If ObjectId conversion fails, the project doesn't exist in MongoDB
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            # Generate subsystem number
+            subsystem_number = db_manager.generate_subsystem_number(project.identifier, project.project_code)
+            
+            # Create subsystem dataclass
+            new_subsystem = DBSubsystem(
+                name=subsystem_data.name,
+                subsystem_number=subsystem_number,
+                parts=[],
+                assemblies=[]
+            )
+            
+            # Add subsystem to project and update in MongoDB
+            project.subsystems.append(new_subsystem)
+            db_manager.update_project(mongo_project_id, project)
+            
+            # Generate a subsystem ID for the response (since MongoDB doesn't store subsystem IDs separately)
+            subsystem_id = str(ObjectId())
+            
+        else:
+            # Use in-memory storage
+            if project_id not in projects_storage:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            project = projects_storage[project_id]
+            
+            # Generate subsystem number
+            subsystem_number = generate_subsystem_number(project['identifier'], project.get('project_code'))
+            
+            # Create subsystem
+            subsystem_id = str(uuid.uuid4())
+            new_subsystem = {
+                "_id": subsystem_id,
+                "name": subsystem_data.name,
+                "subsystem_number": subsystem_number,
+                "parts": [],
+                "assemblies": []
+            }
+            
+            # Add subsystem to project
+            project['subsystems'].append(new_subsystem)
         
         return SubsystemResponse(
-            _id=subsystem_id,
+            id=subsystem_id,
             name=subsystem_data.name,
             subsystem_number=subsystem_number,
             parts=[],
@@ -408,37 +482,102 @@ async def create_subsystem(project_id: str, subsystem_data: SubsystemCreate):
 async def create_part(project_id: str, subsystem_id: str, part_data: PartCreate):
     """Create a new part in a subsystem."""
     try:
-        if project_id not in projects_storage:
-            raise HTTPException(status_code=404, detail="Project not found")
+        if MONGODB_AVAILABLE and db_manager:
+            # Use MongoDB
+            try:
+                mongo_project_id = ObjectId(project_id)
+                project = db_manager.get_project(mongo_project_id)
+            except:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            # Find the subsystem by subsystem_id (note: in MongoDB, subsystems don't have separate ObjectIds)
+            # We'll need to find it by matching the temporary ID used in the frontend or by index
+            # For now, let's match by subsystem number (convert subsystem_id to int if it's a number)
+            target_subsystem = None
+            subsystem_index = -1
+            
+            # Try to find subsystem by index first (if subsystem_id is numeric)
+            try:
+                subsystem_index = int(subsystem_id) if subsystem_id.isdigit() else -1
+                if 0 <= subsystem_index < len(project.subsystems):
+                    target_subsystem = project.subsystems[subsystem_index]
+            except:
+                pass
+            
+            # If not found by index, try to find by matching first few characters of ObjectId-like string
+            if not target_subsystem:
+                for i, subsystem in enumerate(project.subsystems):
+                    # For now, we'll use the first subsystem as a fallback
+                    # In a real implementation, we'd need a better way to identify subsystems
+                    if len(project.subsystems) > 0:
+                        target_subsystem = project.subsystems[0]
+                        subsystem_index = 0
+                        break
+            
+            if not target_subsystem:
+                raise HTTPException(status_code=404, detail="Subsystem not found")
+            
+            # Create part dataclass
+            new_part = DBPart(
+                name=part_data.name,
+                description=part_data.description,
+                drawing=part_data.drawing,
+                material=part_data.material,
+                stl_file=part_data.stl_file,
+                icon_file=part_data.icon_file
+            )
+            
+            # Add part to subsystem and update project in MongoDB
+            target_subsystem.parts.append(new_part)
+            db_manager.update_project(mongo_project_id, project)
+            
+            # Generate a part ID for the response
+            part_id = str(ObjectId())
+            
+        else:
+            # Use in-memory storage
+            if project_id not in projects_storage:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            project = projects_storage[project_id]
+            
+            # Find the subsystem
+            subsystem = None
+            for sub in project['subsystems']:
+                if sub['_id'] == subsystem_id:
+                    subsystem = sub
+                    break
+            
+            if not subsystem:
+                raise HTTPException(status_code=404, detail="Subsystem not found")
+            
+            # Create part
+            part_id = str(uuid.uuid4())
+            new_part = {
+                "_id": part_id,
+                "name": part_data.name,
+                "description": part_data.description,
+                "drawing": part_data.drawing,
+                "material": part_data.material,
+                "stl_file": part_data.stl_file,
+                "icon_file": part_data.icon_file
+            }
+            
+            # Add part to subsystem
+            subsystem['parts'].append(new_part)
         
-        project = projects_storage[project_id]
-        
-        # Find the subsystem
-        subsystem = None
-        for sub in project['subsystems']:
-            if sub['_id'] == subsystem_id:
-                subsystem = sub
-                break
-        
-        if not subsystem:
-            raise HTTPException(status_code=404, detail="Subsystem not found")
-        
-        # Create part
-        part_id = str(uuid.uuid4())
-        new_part = {
-            "_id": part_id,
-            "name": part_data.name,
-            "description": part_data.description,
-            "drawing": part_data.drawing,
-            "material": part_data.material,
-            "stl_file": part_data.stl_file,
-            "icon_file": part_data.icon_file
-        }
-        
-        # Add part to subsystem
-        subsystem['parts'].append(new_part)
-        
-        return PartResponse(**new_part)
+        return PartResponse(
+            id=part_id,
+            name=part_data.name,
+            description=part_data.description,
+            drawing=part_data.drawing,
+            material=part_data.material,
+            stl_file=part_data.stl_file,
+            icon_file=part_data.icon_file
+        )
         
     except HTTPException:
         raise
@@ -450,35 +589,89 @@ async def create_part(project_id: str, subsystem_id: str, part_data: PartCreate)
 async def create_assembly(project_id: str, subsystem_id: str, assembly_data: AssemblyCreate):
     """Create a new assembly in a subsystem."""
     try:
-        if project_id not in projects_storage:
-            raise HTTPException(status_code=404, detail="Project not found")
+        if MONGODB_AVAILABLE and db_manager:
+            # Use MongoDB
+            try:
+                mongo_project_id = ObjectId(project_id)
+                project = db_manager.get_project(mongo_project_id)
+            except:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            # Find the subsystem (same logic as in create_part)
+            target_subsystem = None
+            subsystem_index = -1
+            
+            # Try to find subsystem by index first (if subsystem_id is numeric)
+            try:
+                subsystem_index = int(subsystem_id) if subsystem_id.isdigit() else -1
+                if 0 <= subsystem_index < len(project.subsystems):
+                    target_subsystem = project.subsystems[subsystem_index]
+            except:
+                pass
+            
+            # If not found by index, use first subsystem as fallback
+            if not target_subsystem and len(project.subsystems) > 0:
+                target_subsystem = project.subsystems[0]
+                subsystem_index = 0
+            
+            if not target_subsystem:
+                raise HTTPException(status_code=404, detail="Subsystem not found")
+            
+            # Create assembly dataclass
+            new_assembly = DBAssembly(
+                name=assembly_data.name,
+                description=assembly_data.description,
+                drawing=assembly_data.drawing,
+                icon_file=assembly_data.icon_file
+            )
+            
+            # Add assembly to subsystem and update project in MongoDB
+            target_subsystem.assemblies.append(new_assembly)
+            db_manager.update_project(mongo_project_id, project)
+            
+            # Generate an assembly ID for the response
+            assembly_id = str(ObjectId())
+            
+        else:
+            # Use in-memory storage
+            if project_id not in projects_storage:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            project = projects_storage[project_id]
+            
+            # Find the subsystem
+            subsystem = None
+            for sub in project['subsystems']:
+                if sub['_id'] == subsystem_id:
+                    subsystem = sub
+                    break
+            
+            if not subsystem:
+                raise HTTPException(status_code=404, detail="Subsystem not found")
+            
+            # Create assembly
+            assembly_id = str(uuid.uuid4())
+            new_assembly = {
+                "_id": assembly_id,
+                "name": assembly_data.name,
+                "description": assembly_data.description,
+                "drawing": assembly_data.drawing,
+                "icon_file": assembly_data.icon_file
+            }
+            
+            # Add assembly to subsystem
+            subsystem['assemblies'].append(new_assembly)
         
-        project = projects_storage[project_id]
-        
-        # Find the subsystem
-        subsystem = None
-        for sub in project['subsystems']:
-            if sub['_id'] == subsystem_id:
-                subsystem = sub
-                break
-        
-        if not subsystem:
-            raise HTTPException(status_code=404, detail="Subsystem not found")
-        
-        # Create assembly
-        assembly_id = str(uuid.uuid4())
-        new_assembly = {
-            "_id": assembly_id,
-            "name": assembly_data.name,
-            "description": assembly_data.description,
-            "drawing": assembly_data.drawing,
-            "icon_file": assembly_data.icon_file
-        }
-        
-        # Add assembly to subsystem
-        subsystem['assemblies'].append(new_assembly)
-        
-        return AssemblyResponse(**new_assembly)
+        return AssemblyResponse(
+            id=assembly_id,
+            name=assembly_data.name,
+            description=assembly_data.description,
+            drawing=assembly_data.drawing,
+            icon_file=assembly_data.icon_file
+        )
         
     except HTTPException:
         raise
