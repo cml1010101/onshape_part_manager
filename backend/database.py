@@ -51,14 +51,14 @@ class DatabaseManager:
         Where YR=year, SS=subsystem (01-98, 00=full-robot, 99=misc), ###=part number (000-999)
         
         For non-specific parts (multi-year, single NFR project):
-        - Parts: NFR-SS-P{####}
-        - Assemblies: NFR-SS-A{####}
-        Where SS=subsystem number (00-99), ####=part number (0000-9999)
+        - Parts: NFR-SSSS-P{####}
+        - Assemblies: NFR-SSSS-A{####}
+        Where SSSS=subsystem number (0000-9999), ####=part number (0000-9999)
         
         Args:
             project_type: Either '172' or 'nfr'
             year: Year for 172 projects (last 2 digits will be used)
-            subsystem: Subsystem number (0-99, where 0=full-robot, 99=misc)
+            subsystem: Subsystem number (0-99 for 172, 0-9999 for nfr, where 0=full-robot, 99/9999=misc)
             item_type: Either 'part' or 'assembly'
             
         Returns:
@@ -73,8 +73,13 @@ class DatabaseManager:
         if item_type not in ['part', 'assembly']:
             raise ValueError("item_type must be either 'part' or 'assembly'")
         
-        if subsystem < 0 or subsystem > 99:
-            raise ValueError("subsystem must be between 0 and 99")
+        # Validate subsystem range based on project type
+        if project_type == '172':
+            if subsystem < 0 or subsystem > 99:
+                raise ValueError("subsystem must be between 0 and 99 for 172 projects")
+        else:  # nfr
+            if subsystem < 0 or subsystem > 9999:
+                raise ValueError("subsystem must be between 0 and 9999 for NFR projects")
         
         item_prefix = 'P' if item_type == 'part' else 'A'
         
@@ -105,8 +110,8 @@ class DatabaseManager:
             raise RuntimeError("No available part numbers in range 000-999")
         
         else:  # nfr
-            # Format: NFR-SS-P{####} or NFR-SS-A{####}
-            prefix = f"NFR-{subsystem:02d}-{item_prefix}"
+            # Format: NFR-SSSS-P{####} or NFR-SSSS-A{####}
+            prefix = f"NFR-{subsystem:04d}-{item_prefix}"
             
             # Find existing part numbers with this prefix
             collection = self.parts if item_type == 'part' else self.assemblies
