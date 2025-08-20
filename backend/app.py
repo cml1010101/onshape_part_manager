@@ -230,11 +230,16 @@ async def get_database_summary():
         if MONGODB_AVAILABLE and db_manager:
             # Use MongoDB
             projects_data = []
-            db_projects = db_manager.list_projects()
             
-            for project in db_projects:
+            # Get projects with their actual ObjectIds from MongoDB
+            for project_doc in db_manager.projects.find():
+                project_id = str(project_doc["_id"])
+                
+                # Convert document to Project object
+                project = db_manager._document_to_object(project_doc, Project)
+                
                 subsystems = []
-                for subsystem in project.subsystems:
+                for i, subsystem in enumerate(project.subsystems):
                     parts = [PartResponse(
                         id=str(ObjectId()),
                         name=part.name,
@@ -253,8 +258,9 @@ async def get_database_summary():
                         icon_file=assembly.icon_file
                     ) for assembly in subsystem.assemblies]
                     
+                    # Use subsystem index as a temporary ID since subsystems are embedded
                     subsystems.append(SubsystemResponse(
-                        id=str(ObjectId()),
+                        id=str(i),  # Use index as subsystem ID
                         name=subsystem.name,
                         subsystem_number=subsystem.subsystem_number,
                         parts=parts,
@@ -262,7 +268,7 @@ async def get_database_summary():
                     ))
                 
                 projects_data.append(ProjectResponse(
-                    id=str(ObjectId()),
+                    id=project_id,  # Use the real MongoDB ObjectId
                     year=project.year,
                     identifier=project.identifier,
                     project_code=project.project_code,
@@ -493,32 +499,15 @@ async def create_part(project_id: str, subsystem_id: str, part_data: PartCreate)
             if not project:
                 raise HTTPException(status_code=404, detail="Project not found")
             
-            # Find the subsystem by subsystem_id (note: in MongoDB, subsystems don't have separate ObjectIds)
-            # We'll need to find it by matching the temporary ID used in the frontend or by index
-            # For now, let's match by subsystem number (convert subsystem_id to int if it's a number)
-            target_subsystem = None
-            subsystem_index = -1
-            
-            # Try to find subsystem by index first (if subsystem_id is numeric)
+            # Find the subsystem by subsystem_id (which is the index in the frontend)
             try:
-                subsystem_index = int(subsystem_id) if subsystem_id.isdigit() else -1
+                subsystem_index = int(subsystem_id)
                 if 0 <= subsystem_index < len(project.subsystems):
                     target_subsystem = project.subsystems[subsystem_index]
-            except:
-                pass
-            
-            # If not found by index, try to find by matching first few characters of ObjectId-like string
-            if not target_subsystem:
-                for i, subsystem in enumerate(project.subsystems):
-                    # For now, we'll use the first subsystem as a fallback
-                    # In a real implementation, we'd need a better way to identify subsystems
-                    if len(project.subsystems) > 0:
-                        target_subsystem = project.subsystems[0]
-                        subsystem_index = 0
-                        break
-            
-            if not target_subsystem:
-                raise HTTPException(status_code=404, detail="Subsystem not found")
+                else:
+                    raise HTTPException(status_code=404, detail="Subsystem not found")
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Invalid subsystem ID")
             
             # Create part dataclass
             new_part = DBPart(
@@ -600,25 +589,15 @@ async def create_assembly(project_id: str, subsystem_id: str, assembly_data: Ass
             if not project:
                 raise HTTPException(status_code=404, detail="Project not found")
             
-            # Find the subsystem (same logic as in create_part)
-            target_subsystem = None
-            subsystem_index = -1
-            
-            # Try to find subsystem by index first (if subsystem_id is numeric)
+            # Find the subsystem by subsystem_id (which is the index in the frontend)
             try:
-                subsystem_index = int(subsystem_id) if subsystem_id.isdigit() else -1
+                subsystem_index = int(subsystem_id)
                 if 0 <= subsystem_index < len(project.subsystems):
                     target_subsystem = project.subsystems[subsystem_index]
-            except:
-                pass
-            
-            # If not found by index, use first subsystem as fallback
-            if not target_subsystem and len(project.subsystems) > 0:
-                target_subsystem = project.subsystems[0]
-                subsystem_index = 0
-            
-            if not target_subsystem:
-                raise HTTPException(status_code=404, detail="Subsystem not found")
+                else:
+                    raise HTTPException(status_code=404, detail="Subsystem not found")
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Invalid subsystem ID")
             
             # Create assembly dataclass
             new_assembly = DBAssembly(
