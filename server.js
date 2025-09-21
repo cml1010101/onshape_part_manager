@@ -13,8 +13,8 @@ require('dotenv').config();
 config = {
     oauthClientId: process.env.ONSHAPE_CLIENT_ID,
     oauthClientSecret: process.env.ONSHAPE_CLIENT_SECRET,
-    oauthCallbackUrl: process.env.ONSHAPE_CALLBACK_URL,
-    oauthUrl: process.env.ONSHAPE_URL || 'https://oauth.onshape.com',
+    oauthCallbackUrl: process.env.OAUTH_CALLBACK_URL,
+    oauthUrl: process.env.OAUTH_URL || 'https://oauth.onshape.com',
     sessionSecret: process.env.SESSION_SECRET
 }
 
