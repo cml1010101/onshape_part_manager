@@ -15,6 +15,7 @@ config = {
     oauthClientSecret: process.env.ONSHAPE_CLIENT_SECRET,
     oauthCallbackUrl: process.env.ONSHAPE_CALLBACK_URL,
     oauthUrl: process.env.ONSHAPE_URL || 'https://oauth.onshape.com',
+    sessionSecret: process.env.SESSION_SECRET
 }
 
 const app = express();
