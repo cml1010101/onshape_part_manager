@@ -8,20 +8,25 @@ const bodyParser = require('body-parser');
 const passport = require('passport');
 const OnshapeStrategy = require('passport-onshape');
 
-const config = require('./config');
-
 const app = express();
 
 app.use(bodyParser.json());
 
-app.set('trust proxy', 1); // To allow to run correctly behind Heroku
+app.set('trust proxy', 1); // To allow to run correctly behind Heroku when deployed
+
+const SESSION_SECRET = process.env.SESSION_SECRET;
+const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID;
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET;
+const OAUTH_CALLBACK_URL = process.env.OAUTH_CALLBACK_URL;
+const OAUTH_URL = process.env.OAUTH_URL || 'https://oauth.onshape.com';
+const PORT = process.env.PORT || 3000;
 
 app.use(session({
-    secret: config.sessionSecret,
+    secret: SESSION_SECRET,
     saveUninitialized: false,
     resave: false,
     cookie: {
-        name: 'app-gltf-viewer',
+        name: 'app-testapp-session',
         sameSite: 'none',
         secure: true,
         httpOnly: true,
@@ -33,12 +38,12 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 passport.use(new OnshapeStrategy({
-        clientID: config.oauthClientId,
-        clientSecret: config.oauthClientSecret,
-        callbackURL: config.oauthCallbackUrl,
-        authorizationURL: `${config.oauthUrl}/oauth/authorize`,
-        tokenURL: `${config.oauthUrl}/oauth/token`,
-        userProfileURL: `${config.oauthUrl}/api/users/sessioninfo`
+        clientID: OAUTH_CLIENT_ID,
+        clientSecret: OAUTH_CLIENT_SECRET,
+        callbackURL: OAUTH_CALLBACK_URL,
+        authorizationURL: `${OAUTH_URL}/oauth/authorize`,
+        tokenURL: `${OAUTH_URL}/oauth/token`,
+        userProfileURL: `${OAUTH_URL}/api/users/sessioninfo`
     },
     (accessToken, refreshToken, profile, done) => {
         profile.accessToken = accessToken;
@@ -51,23 +56,12 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
 app.use('/oauthSignin', (req, res) => {
-    const state = {
-        docId: req.query.documentId,
-        workId: req.query.workspaceId,
-        elId: req.query.elementId
-    };
-    req.session.state = state;
-    return passport.authenticate('onshape', { state: uuid.v4(state) })(req, res);
+    return passport.authenticate('onshape', { state: uuid.v4() })(req, res);
 }, (req, res) => { /* redirected to Onshape for authentication */ });
 
 app.use('/oauthRedirect', passport.authenticate('onshape', { failureRedirect: '/grantDenied' }), (req, res) => {
-    if (req.session.state) {
-        res.redirect(`/?documentId=${req.session.state.docId}&workspaceId=${req.session.state.workId}&elementId=${req.session.state.elId}`);
-    } else {
-        // If the session state has not been stored, it is because the user has disabled 3rd party cookies.
-        // In this case, we will show a message to the user asking them to enable cookies.
-        res.sendFile(path.join(__dirname, 'public', 'html', 'cookiesDisabled.html'));
-    }
+    /* This code is specific to the glTF Viewer sample app. You can replace it with the input for whatever Onshape endpoints you are using in your app. */
+    res.redirect(`/`);
 });
 
 app.get('/grantDenied', (req, res) => {
@@ -102,8 +96,8 @@ app.get('/', (req, res) => {
 });
 
 const refreshAccessToken = async (user) => {
-    const body = 'grant_type=refresh_token&refresh_token=' + user.refreshToken + '&client_id=' + config.oauthClientId + '&client_secret=' + config.oauthClientSecret;
-    let res = await fetch(config.oauthUrl + "/oauth/token", {
+    const body = 'grant_type=refresh_token&refresh_token=' + user.refreshToken + '&client_id=' + OAUTH_CLIENT_ID + '&client_secret=' + OAUTH_CLIENT_SECRET;
+    let res = await fetch(OAUTH_URL + "/oauth/token", {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -117,4 +111,6 @@ const refreshAccessToken = async (user) => {
     }
 }
 
-module.exports = app;
+app.listen(PORT, () => {
+    console.log(`App listening on port ${PORT}`);
+});
