@@ -8,28 +8,20 @@ const bodyParser = require('body-parser');
 const passport = require('passport');
 const OnshapeStrategy = require('passport-onshape');
 
-require('dotenv').config();
-
-config = {
-    oauthClientId: process.env.ONSHAPE_CLIENT_ID,
-    oauthClientSecret: process.env.ONSHAPE_CLIENT_SECRET,
-    oauthCallbackUrl: process.env.OAUTH_CALLBACK_URL,
-    oauthUrl: process.env.OAUTH_URL || 'https://oauth.onshape.com',
-    sessionSecret: process.env.SESSION_SECRET
-}
+const config = require('./config');
 
 const app = express();
 
 app.use(bodyParser.json());
 
-app.set('trust proxy', 1); // To allow to run correctly behind Heroku when deployed
+app.set('trust proxy', 1); // To allow to run correctly behind Heroku
 
 app.use(session({
     secret: config.sessionSecret,
     saveUninitialized: false,
     resave: false,
     cookie: {
-        name: 'onshape-webhook-app',
+        name: 'app-gltf-viewer',
         sameSite: 'none',
         secure: true,
         httpOnly: true,
@@ -39,9 +31,6 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
-
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((obj, done) => done(null, obj));
 
 passport.use(new OnshapeStrategy({
         clientID: config.oauthClientId,
@@ -58,8 +47,10 @@ passport.use(new OnshapeStrategy({
     }
 ));
 
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
 app.use('/oauthSignin', (req, res) => {
-    /* These 5 lines are specific to the glTF Viewer sample app. You can replace them with the input for whatever Onshape endpoints you are using in your app */
     const state = {
         docId: req.query.documentId,
         workId: req.query.workspaceId,
@@ -67,19 +58,29 @@ app.use('/oauthSignin', (req, res) => {
     };
     req.session.state = state;
     return passport.authenticate('onshape', { state: uuid.v4(state) })(req, res);
-}, (req, res) => {    
-
-});
+}, (req, res) => { /* redirected to Onshape for authentication */ });
 
 app.use('/oauthRedirect', passport.authenticate('onshape', { failureRedirect: '/grantDenied' }), (req, res) => {
-    /* This code is specific to the glTF Viewer sample app. You can replace it with the input for whatever Onshape endpoints you are using in your app. */
-    res.redirect(`/?documentId=${req.session.state.docId}&workspaceId=${req.session.state.workId}&elementId=${req.session.state.elId}`);
+    if (req.session.state) {
+        res.redirect(`/?documentId=${req.session.state.docId}&workspaceId=${req.session.state.workId}&elementId=${req.session.state.elId}`);
+    } else {
+        // If the session state has not been stored, it is because the user has disabled 3rd party cookies.
+        // In this case, we will show a message to the user asking them to enable cookies.
+        res.sendFile(path.join(__dirname, 'public', 'html', 'cookiesDisabled.html'));
+    }
 });
 
 app.get('/grantDenied', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'html', 'grantDenied.html'));
 })
 
+/**
+ * After landing on the home page, we check if a user had already signed in.
+ * If no user has signed in, we redirect the request to the OAuth sign-in page.
+ * If a user had signed in previously, we will attempt to refresh the access token of the user.
+ * After successfully refreshing the access token, we will simply take the user to the landing page of the app.
+ * If the refresh token request fails, we will redirect the user to the OAuth sign-in page again. 
+ */
 app.get('/', (req, res) => {
     if (!req.user) {
         return res.redirect(`/oauthSignin${req._parsedUrl.search ? req._parsedUrl.search : ""}`);
@@ -100,7 +101,6 @@ app.get('/', (req, res) => {
     }
 });
 
-//Refresh the access token
 const refreshAccessToken = async (user) => {
     const body = 'grant_type=refresh_token&refresh_token=' + user.refreshToken + '&client_id=' + config.oauthClientId + '&client_secret=' + config.oauthClientSecret;
     let res = await fetch(config.oauthUrl + "/oauth/token", {
@@ -118,7 +118,3 @@ const refreshAccessToken = async (user) => {
 }
 
 module.exports = app;
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
