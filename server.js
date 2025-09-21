@@ -86,6 +86,7 @@ app.get('/', (req, res) => {
             usrObj.refreshToken = tokenJson.refresh_token;
             // Update the user object in PassportJS. No redirections will happen here, this is a purely internal operation.
             req.login(usrObj, () => {
+                console.log('Serving index.html to user ' + req.user.id);
                 return res.sendFile(path.join(__dirname, 'public', 'html', 'index.html'));
             });
         }).catch(() => {
