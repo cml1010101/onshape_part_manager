@@ -73,9 +73,7 @@ app.use('/oauthSignin', (req, res) => {
 
 app.use('/oauthRedirect', passport.authenticate('onshape', { failureRedirect: '/grantDenied' }), (req, res) => {
     /* This code is specific to the glTF Viewer sample app. You can replace it with the input for whatever Onshape endpoints you are using in your app. */
-    res.redirect(`/?documentId=${req.session.state.docId}
-&workspaceId=${req.session.state.workId}&elementId=
-    ${req.session.state.elId}`);
+    res.redirect(`/?documentId=${req.session.state.docId}&workspaceId=${req.session.state.workId}&elementId=${req.session.state.elId}`);
 });
 
 app.get('/grantDenied', (req, res) => {
