@@ -34,8 +34,8 @@ const refreshTokens = new Map(); // refreshToken -> { userId, clientId, scopes }
 const clients = new Map([
     // Register Onshape as a client (you'd configure this in Onshape's developer settings)
     ['onshape-client-id', {
-        clientId: 'onshape-client-id',
-        clientSecret: 'onshape-client-secret',
+        clientId: PROVIDER_CLIENT_ID,
+        clientSecret: PROVIDER_CLIENT_SECRET,
         redirectUris: ['https://cad.onshape.com/oauth/callback'] // Example redirect URI
     }]
 ]);
