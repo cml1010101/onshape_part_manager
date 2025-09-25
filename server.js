@@ -125,6 +125,7 @@ app.get('/oauth/authorize', (req, res) => {
     
     const client = clients.get(client_id);
     if (!client) {
+        console.warn(`Unknown client_id: ${client_id}`);
         return res.status(400).json({ error: 'invalid_client' });
     }
     
