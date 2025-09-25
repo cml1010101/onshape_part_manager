@@ -40,6 +40,10 @@ const clients = new Map([
     }]
 ]);
 
+console.log(`Using Onshape OAuth URL: ${OAUTH_URL}`);
+console.log(`PROVIDER Client ID: ${PROVIDER_CLIENT_ID}`);
+console.log(`PROVIDER Client Secret: ${PROVIDER_CLIENT_SECRET}`);
+
 app.use(session({
     secret: SESSION_SECRET,
     saveUninitialized: false,
