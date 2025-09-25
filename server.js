@@ -35,8 +35,7 @@ const clients = new Map([
     // Register Onshape as a client (you'd configure this in Onshape's developer settings)
     [PROVIDER_CLIENT_ID, {
         clientId: PROVIDER_CLIENT_ID,
-        clientSecret: PROVIDER_CLIENT_SECRET,
-        redirectUris: ['https://cad.onshape.com/oauth/callback'] // Example redirect URI
+        clientSecret: PROVIDER_CLIENT_SECRET
     }]
 ]);
 
@@ -127,10 +126,6 @@ app.get('/oauth/authorize', (req, res) => {
     if (!client) {
         console.warn(`Unknown client_id: ${client_id}`);
         return res.status(400).json({ error: 'invalid_client' });
-    }
-    
-    if (!client.redirectUris.includes(redirect_uri)) {
-        return res.status(400).json({ error: 'invalid_redirect_uri' });
     }
     
     // Check if user is authenticated with your app
