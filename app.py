@@ -203,7 +203,7 @@ sh = gc.open_by_key('1uTOmapNyBX1aN_QvnkIVoj-CXfeBm_LdSEAp7a-GiNk')
 def get_next_free_part_uid() -> int:
     """Get the next available part UID from the Google Sheet"""
     try:
-        worksheet = sh.worksheet('Parts')
+        worksheet = sh.worksheet('Master')
         uids = worksheet.col_values(1)[1:]  # Skip header row
         
         if not uids:
@@ -228,7 +228,7 @@ def get_next_free_part_uid() -> int:
 def check_existing_part(document_id: str, element_id: str, part_id: Optional[str] = None) -> Optional[Dict]:
     """Check if part already exists in Google Sheets"""
     try:
-        worksheet = sh.worksheet('Parts')
+        worksheet = sh.worksheet('Master')
         all_records = worksheet.get_all_records()
         
         for record in all_records:
@@ -261,7 +261,7 @@ def check_existing_part(document_id: str, element_id: str, part_id: Optional[str
 def append_part(uid: int, type: str, part_number: str, project_code: str, subsystem_number: int, name: str, description: str, documentId: str, companyId: str, workspaceId: str, elementId: str, partId: str):
     """Append a new part entry to the Google Sheet"""
     try:
-        worksheet = sh.worksheet('Parts')
+        worksheet = sh.worksheet('Master')
         new_row = [uid, type, part_number, project_code, subsystem_number, name, description, documentId, companyId, workspaceId, elementId, partId or '']
         worksheet.append_row(new_row)
         return True
