@@ -242,7 +242,7 @@ async def generate_part_number(request: Request):
             
             # Get next available part UID
             part_uid = get_next_free_part_uid()
-            if not part_uid:
+            if part_uid is None:
                 print('Failed to generate part UID')
                 continue
             
