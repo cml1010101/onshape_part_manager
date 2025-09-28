@@ -73,11 +73,42 @@ async def get_document_property(document_id: str, property_name: str) -> Optiona
 
 async def get_part_info(document_id: str, workspace_id: str, element_id: str, part_id: Optional[str] = None) -> Dict[str, str]:
     """Get part/assembly information from Onshape"""
-    if part_id:
+    
+    # Handle JFD (Just For Display) parts - these are derived/reference parts
+    if part_id and part_id.upper() == "JFD":
+        print(f"Handling JFD (derived/reference) part: {part_id}")
+        # For JFD parts, we can't get individual part metadata, so get element info instead
+        url = f"{ONSHAPE_BASE_URL}/elements/d/{document_id}/w/{workspace_id}/e/{element_id}"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": get_auth_header()
+        }
+        
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # For JFD parts, use element name with JFD suffix to distinguish
+            element_name = data.get("name", "Unnamed Element")
+            return {
+                "name": f"{element_name} (JFD Reference)",
+                "description": f"Derived/reference part from {element_name}"
+            }
+        except requests.exceptions.RequestException as error:
+            print(f"Error fetching element info for JFD part: {error}")
+            return {
+                "name": "JFD Reference Part",
+                "description": "Derived/reference part (metadata unavailable)"
+            }
+    
+    # Handle regular parts
+    if part_id and part_id.upper() != "JFD":
         # For parts in part studios
         url = f"{ONSHAPE_BASE_URL}/parts/d/{document_id}/w/{workspace_id}/e/{element_id}/partid/{part_id}"
     else:
-        # For assemblies or part studios
+        # For assemblies or part studios without specific part ID
         url = f"{ONSHAPE_BASE_URL}/elements/d/{document_id}/w/{workspace_id}/e/{element_id}"
     
     headers = {
@@ -91,7 +122,7 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
         
         data = response.json()
         
-        if part_id:
+        if part_id and part_id.upper() != "JFD":
             return {
                 "name": data.get("name", "Unnamed Part"),
                 "description": data.get("description", "")
@@ -153,6 +184,8 @@ def compose_part_number(subsystem_number: str, project_code: str, part_uid: int,
         'Part': 'PRT',
         'Assembly': 'ASM',
         'Drawing': 'DRW',
+        'Derived': 'DRV',  # Add support for derived/JFD parts
+        'Reference': 'REF',  # Alternative for derived parts
         'default': 'PRT'
     }
     
@@ -203,12 +236,19 @@ def check_existing_part(document_id: str, element_id: str, part_id: Optional[str
             if (record.get('documentId') == document_id and 
                 record.get('elementId') == element_id):
                 
-                # If part_id is specified, it must match, otherwise it should be empty
+                # Handle JFD parts comparison
                 if part_id:
-                    if record.get('partId') == part_id:
-                        return record
+                    if part_id.upper() == "JFD":
+                        # For JFD parts, match if existing record also has JFD
+                        if record.get('partId', '').upper() == "JFD":
+                            return record
+                    else:
+                        # Regular part ID matching
+                        if record.get('partId') == part_id:
+                            return record
                 else:
-                    if not record.get('partId'):
+                    # No part ID specified, should match empty part ID
+                    if not record.get('partId') or record.get('partId') == '':
                         return record
         
         return None
@@ -252,6 +292,10 @@ async def generate_part_number(request: Request):
             
             print(f"Processing record: documentId={document_id}, elementId={element_id}, partId={part_id}")
             
+            # Special handling for JFD parts
+            if part_id and part_id.upper() == "JFD":
+                print(f"Detected JFD (derived/reference) part: {part_id}")
+            
             # Validate required fields
             if not all([document_id, element_id, workspace_id]):
                 print(f"Missing required fields for record")
@@ -280,12 +324,16 @@ async def generate_part_number(request: Request):
                 print(f"Missing required document properties: subsystemNumber={subsystem_number}, projectCode={project_code}")
                 continue
             
-            # Get part information
+            # Get part information (handles JFD parts appropriately)
             part_info = await get_part_info(document_id, workspace_id, element_id, part_id)
             
-            # Determine part type from categories
+            # Determine part type from categories or part_id
             part_type = 'Part'  # default
-            if categories and len(categories) > 0:
+            
+            # Special handling for JFD parts
+            if part_id and part_id.upper() == "JFD":
+                part_type = 'Derived'  # or 'Reference' - you can choose the naming convention
+            elif categories and len(categories) > 0:
                 part_type = categories[0].get('name', 'Part')
             else:
                 # Try to determine type from element type
@@ -302,7 +350,7 @@ async def generate_part_number(request: Request):
                 print('Failed to generate part UID')
                 continue
             
-            # Compose part number
+            # Compose part number (may need to add 'DRV' for derived parts)
             part_number = compose_part_number(subsystem_number, project_code, part_uid, part_type)
             
             # Add to Google Sheets
@@ -318,7 +366,7 @@ async def generate_part_number(request: Request):
                 company_id,
                 workspace_id,
                 element_id,
-                part_id or ''
+                part_id or ''  # Store JFD as-is
             )
             
             if success:
@@ -331,7 +379,7 @@ async def generate_part_number(request: Request):
                     "partId": part_id,
                     "partNumber": part_number
                 })
-                print(f"Successfully created part number: {part_number}")
+                print(f"Successfully created part number: {part_number} for {'JFD reference' if part_id and part_id.upper() == 'JFD' else 'regular'} part")
         
         return results
         
