@@ -219,7 +219,7 @@ async def generate_part_number(request: Request):
             subsystem_number = await get_document_property(document_id, "Subsystem Number")
             project_code = await get_document_property(document_id, "Project Code")
             
-            if not subsystem_number or not project_code:
+            if subsystem_number is None or not project_code:
                 print(f"Missing required document properties: subsystemNumber={subsystem_number}, projectCode={project_code}")
                 continue
             
