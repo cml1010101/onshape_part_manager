@@ -267,6 +267,18 @@ async def generate_part_number(request: Request):
             )
             
             if success:
+                print(f"Generated part number: {part_number}")
+                print(record)
+                print("-----------------------------------")
+                print({
+                    "id": id,
+                    "documentId": document_id,
+                    "elementId": element_id,
+                    "workspaceId": workspace_id,
+                    "elementType": element_type,
+                    "partId": part_id,
+                    "partNumber": part_number
+                })
                 results.append({
                     "id": id,
                     "documentId": document_id,
