@@ -67,6 +67,12 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
             raise Exception(f"HTTP error! status: {response.status_code}")
         
         data = response.json()
+        print(data)
+        if not data.get("properties") or not isinstance(data["properties"], list):
+            return {
+                "name": "Unknown",
+                "description": ""
+            }
         name = None
         description = None
         for property in data.properties:
