@@ -174,7 +174,7 @@ def get_next_free_part_uid() -> int:
         uids = worksheet.col_values(1)[1:]  # Skip header row
         
         if not uids:
-            return 1000  # Start from 1000 for first part
+            return 0  # Start from 0 for first part
             
         # Filter out empty cells and convert to integers
         uid_ints = []
