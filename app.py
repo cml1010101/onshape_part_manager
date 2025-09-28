@@ -75,7 +75,7 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
             }
         name = None
         description = None
-        for property in data.properties:
+        for property in data["properties"]:
             if property.get("name") == "name":
                 name = property.get("value")
             elif property.get("name") == "description":
