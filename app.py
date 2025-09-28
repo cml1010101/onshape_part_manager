@@ -134,7 +134,7 @@ def get_next_free_part_uid() -> int:
         uids = worksheet.col_values(1)[1:]  # Skip header row
         
         if len(uids) == 0:
-            return 1000  # Start from 1000 for first part
+            return 0 
             
         # Filter out empty cells and convert to integers
         uid_ints = []
@@ -143,8 +143,14 @@ def get_next_free_part_uid() -> int:
                 uid_ints.append(int(uid.strip()))
         
         if not uid_ints:
-            return 1000
-            
+            return 0
+        
+        perfect_range = set(range(0, max(uid_ints) + 1))
+        
+        existing_uids = set(uid_ints)
+        missing_uids = sorted(perfect_range - existing_uids)
+        if missing_uids:
+            return missing_uids[0]
         return max(uid_ints) + 1
         
     except Exception as e:
