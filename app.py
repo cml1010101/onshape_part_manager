@@ -18,34 +18,6 @@ def get_auth_header() -> str:
     return f"Basic {encoded_credentials}"
 
 
-async def get_document_properties(document_id: str) -> Dict[str, Any]:
-    """Fetch document properties from Onshape API"""
-    url = f"{ONSHAPE_BASE_URL}/metadata/d/{document_id}"
-    headers = {
-        "Accept": "application/json",
-        "Authorization": get_auth_header()
-    }
-    
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if "properties" in data and isinstance(data["properties"], list):
-            # Convert properties list to a more convenient dict format
-            properties_dict = {}
-            for prop in data["properties"]:
-                if "name" in prop and "value" in prop:
-                    properties_dict[prop["name"]] = prop["value"]
-            return properties_dict
-        
-        return {}
-    except requests.exceptions.RequestException as error:
-        print(f"Error fetching document properties: {error}")
-        return {}
-
-
 async def get_document_property(document_id: str, property_name: str) -> Optional[str]:
     """Fetch a specific document property from Onshape API"""
     url = f"{ONSHAPE_BASE_URL}/metadata/d/{document_id}"
@@ -56,17 +28,19 @@ async def get_document_property(document_id: str, property_name: str) -> Optiona
     
     try:
         response = requests.get(url, headers=headers)
-        response.raise_for_status()
+        
+        if not response.ok:
+            raise Exception(f"HTTP error! status: {response.status_code}")
         
         data = response.json()
         
-        if "properties" in data and isinstance(data["properties"], list):
+        if data.get("properties") and isinstance(data["properties"], list):
             for prop in data["properties"]:
                 if prop.get("name") == property_name:
                     return prop.get("value")
         
         return None
-    except requests.exceptions.RequestException as error:
+    except Exception as error:
         print(f"Error fetching document property {property_name}: {error}")
         return None
 
@@ -74,41 +48,11 @@ async def get_document_property(document_id: str, property_name: str) -> Optiona
 async def get_part_info(document_id: str, workspace_id: str, element_id: str, part_id: Optional[str] = None) -> Dict[str, str]:
     """Get part/assembly information from Onshape"""
     
-    # Handle JFD (Just For Display) parts - these are derived/reference parts
-    if part_id and part_id.upper() == "JFD":
-        print(f"Handling JFD (derived/reference) part: {part_id}")
-        # For JFD parts, we can't get individual part metadata, so get element info instead
-        url = f"{ONSHAPE_BASE_URL}/elements/d/{document_id}/w/{workspace_id}/e/{element_id}"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": get_auth_header()
-        }
-        
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            # For JFD parts, use element name with JFD suffix to distinguish
-            element_name = data.get("name", "Unnamed Element")
-            return {
-                "name": f"{element_name} (JFD Reference)",
-                "description": f"Derived/reference part from {element_name}"
-            }
-        except requests.exceptions.RequestException as error:
-            print(f"Error fetching element info for JFD part: {error}")
-            return {
-                "name": "JFD Reference Part",
-                "description": "Derived/reference part (metadata unavailable)"
-            }
-    
-    # Handle regular parts
-    if part_id and part_id.upper() != "JFD":
+    if part_id:
         # For parts in part studios
         url = f"{ONSHAPE_BASE_URL}/parts/d/{document_id}/w/{workspace_id}/e/{element_id}/partid/{part_id}"
     else:
-        # For assemblies or part studios without specific part ID
+        # For assemblies or part studios
         url = f"{ONSHAPE_BASE_URL}/elements/d/{document_id}/w/{workspace_id}/e/{element_id}"
     
     headers = {
@@ -118,11 +62,13 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
     
     try:
         response = requests.get(url, headers=headers)
-        response.raise_for_status()
+        
+        if not response.ok:
+            raise Exception(f"HTTP error! status: {response.status_code}")
         
         data = response.json()
         
-        if part_id and part_id.upper() != "JFD":
+        if part_id:
             return {
                 "name": data.get("name", "Unnamed Part"),
                 "description": data.get("description", "")
@@ -132,50 +78,12 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
                 "name": data.get("name", "Unnamed Element"),
                 "description": data.get("description", "")
             }
-    except requests.exceptions.RequestException as error:
+    except Exception as error:
         print(f"Error fetching part info: {error}")
         return {
             "name": "Unknown",
             "description": ""
         }
-
-
-async def get_parts_in_partstudio(document_id: str, workspace_id: str, element_id: str) -> list:
-    """Get all parts in a part studio"""
-    url = f"{ONSHAPE_BASE_URL}/parts/d/{document_id}/w/{workspace_id}/e/{element_id}"
-    headers = {
-        "Accept": "application/json",
-        "Authorization": get_auth_header()
-    }
-    
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        data = response.json()
-        return data if isinstance(data, list) else []
-    except requests.exceptions.RequestException as error:
-        print(f"Error fetching parts in partstudio: {error}")
-        return []
-
-
-async def get_assemblies_in_document(document_id: str, workspace_id: str) -> list:
-    """Get all assemblies in a document"""
-    url = f"{ONSHAPE_BASE_URL}/assemblies/d/{document_id}/w/{workspace_id}"
-    headers = {
-        "Accept": "application/json",
-        "Authorization": get_auth_header()
-    }
-    
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        data = response.json()
-        return data if isinstance(data, list) else []
-    except requests.exceptions.RequestException as error:
-        print(f"Error fetching assemblies: {error}")
-        return []
 
 
 def compose_part_number(subsystem_number: str, project_code: str, part_uid: int, part_type: str) -> str:
@@ -184,8 +92,6 @@ def compose_part_number(subsystem_number: str, project_code: str, part_uid: int,
         'Part': 'PRT',
         'Assembly': 'ASM',
         'Drawing': 'DRW',
-        'Derived': 'DRV',  # Add support for derived/JFD parts
-        'Reference': 'REF',  # Alternative for derived parts
         'default': 'PRT'
     }
     
@@ -196,18 +102,39 @@ def compose_part_number(subsystem_number: str, project_code: str, part_uid: int,
     
     return f"{project_code}-{str(subsystem_number).zfill(2)}-{type_code}-{str(part_uid).zfill(5)}"
 
+
+# Google Sheets setup
 creds_path = 'credentials.json' if os.path.exists('credentials.json') else '/secrets/credentials.json'
 gc = gspread.service_account(filename=creds_path)
 sh = gc.open_by_key('1uTOmapNyBX1aN_QvnkIVoj-CXfeBm_LdSEAp7a-GiNk')
 
+def check_existing_part(document_id: str, element_id: str, part_id: Optional[str] = None) -> Optional[Dict]:
+    """Check if part already exists in Google Sheets"""
+    try:
+        worksheet = sh.worksheet('Master')
+        all_records = worksheet.get_all_records()
+        
+        for record in all_records:
+            if (record.get('documentId') == document_id and 
+                record.get('elementId') == element_id and
+                record.get('partId') == part_id):
+                return record
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error checking existing part: {e}")
+        return None
+
+
 def get_next_free_part_uid() -> int:
-    """Get the next available part UID from the Google Sheet"""
+    """Get the next available part UID from Google Sheets"""
     try:
         worksheet = sh.worksheet('Master')
         uids = worksheet.col_values(1)[1:]  # Skip header row
         
-        if not uids:
-            return 0  # Start from 0 for first part
+        if len(uids) == 0:
+            return 1000  # Start from 1000 for first part
             
         # Filter out empty cells and convert to integers
         uid_ints = []
@@ -221,92 +148,50 @@ def get_next_free_part_uid() -> int:
         return max(uid_ints) + 1
         
     except Exception as e:
-        print(f"Error getting next part UID: {e}")
-        return 1000
-
-
-def check_existing_part(document_id: str, element_id: str, part_id: Optional[str] = None) -> Optional[Dict]:
-    """Check if part already exists in Google Sheets"""
-    try:
-        worksheet = sh.worksheet('Master')
-        all_records = worksheet.get_all_records()
-        
-        for record in all_records:
-            # Check if this part already exists
-            if (record.get('documentId') == document_id and 
-                record.get('elementId') == element_id):
-                
-                # Handle JFD parts comparison
-                if part_id:
-                    if part_id.upper() == "JFD":
-                        # For JFD parts, match if existing record also has JFD
-                        if record.get('partId', '').upper() == "JFD":
-                            return record
-                    else:
-                        # Regular part ID matching
-                        if record.get('partId') == part_id:
-                            return record
-                else:
-                    # No part ID specified, should match empty part ID
-                    if not record.get('partId') or record.get('partId') == '':
-                        return record
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error checking existing part: {e}")
+        print(f"Error fetching partUIDs: {e}")
         return None
 
 
-def append_part(uid: int, type: str, part_number: str, project_code: str, subsystem_number: int, name: str, description: str, documentId: str, companyId: str, workspaceId: str, elementId: str, partId: str):
-    """Append a new part entry to the Google Sheet"""
+def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str, project_code: str, element_id: str, workspace_id: str, document_id: str, part_name: str, part_description: str, part_id: Optional[str], part_type: str):
+    """Add part to Google Sheets"""
     try:
         worksheet = sh.worksheet('Master')
-        new_row = [uid, type, part_number, project_code, subsystem_number, name, description, documentId, companyId, workspaceId, elementId, partId or '']
+        new_row = [part_uid, part_number, subsystem_id, project_code, element_id, workspace_id, document_id, part_name, part_description, part_id or None, part_type]
         worksheet.append_row(new_row)
+        print(f"Part added to Google Sheets: {part_number}")
         return True
-    except Exception as e:
-        print(f"Error appending to Google Sheet: {e}")
+    except Exception as error:
+        print(f"Error adding part to Google Sheets: {error}")
         return False
+
 
 app = FastAPI()
 
 @app.post("/generatePartNumber")
 async def generate_part_number(request: Request):
     """Generate part numbers for Onshape parts/assemblies"""
+    print("Received event:", await request.body())
+    
     try:
-        data = await request.json()
+        request_body = await request.json()
         results = []
         
-        # Handle both single record and array of records
-        records = data if isinstance(data, list) else [data]
-        
-        for record in records:
+        for record in request_body:
             document_id = record.get('documentId')
             element_id = record.get('elementId')
-            workspace_id = record.get('workSpaceId')  # Note: matches Node.js naming
+            workspace_id = record.get('workSpaceId')
             part_id = record.get('partId')
             element_type = record.get('elementType')
             categories = record.get('categories', [])
-            company_id = record.get('companyId', '')
             
             print(f"Processing record: documentId={document_id}, elementId={element_id}, partId={part_id}")
-            
-            # Special handling for JFD parts
-            if part_id and part_id.upper() == "JFD":
-                print(f"Detected JFD (derived/reference) part: {part_id}")
-            
-            # Validate required fields
-            if not all([document_id, element_id, workspace_id]):
-                print(f"Missing required fields for record")
-                continue
             
             # Check if part already exists
             existing_part = check_existing_part(document_id, element_id, part_id)
             if existing_part:
                 print(f"Part already exists: {existing_part.get('part_number', 'Unknown')}")
                 results.append({
-                    "id": existing_part.get('uid'),
+                    "id": existing_part.get('partUID'),
                     "documentId": document_id,
                     "elementId": element_id,
                     "workspaceId": workspace_id,
@@ -324,16 +209,12 @@ async def generate_part_number(request: Request):
                 print(f"Missing required document properties: subsystemNumber={subsystem_number}, projectCode={project_code}")
                 continue
             
-            # Get part information (handles JFD parts appropriately)
+            # Get part information
             part_info = await get_part_info(document_id, workspace_id, element_id, part_id)
             
-            # Determine part type from categories or part_id
+            # Determine part type from categories
             part_type = 'Part'  # default
-            
-            # Special handling for JFD parts
-            if part_id and part_id.upper() == "JFD":
-                part_type = 'Derived'  # or 'Reference' - you can choose the naming convention
-            elif categories and len(categories) > 0:
+            if categories and len(categories) > 0:
                 part_type = categories[0].get('name', 'Part')
             else:
                 # Try to determine type from element type
@@ -350,23 +231,22 @@ async def generate_part_number(request: Request):
                 print('Failed to generate part UID')
                 continue
             
-            # Compose part number (may need to add 'DRV' for derived parts)
+            # Compose part number
             part_number = compose_part_number(subsystem_number, project_code, part_uid, part_type)
             
             # Add to Google Sheets
-            success = append_part(
+            success = add_part_to_google_sheets(
                 part_uid,
-                part_type,
                 part_number,
+                subsystem_number,
                 project_code,
-                int(subsystem_number),
+                element_id,
+                workspace_id,
+                document_id,
                 part_info['name'],
                 part_info['description'],
-                document_id,
-                company_id,
-                workspace_id,
-                element_id,
-                part_id or ''  # Store JFD as-is
+                part_id,
+                part_type
             )
             
             if success:
@@ -379,13 +259,13 @@ async def generate_part_number(request: Request):
                     "partId": part_id,
                     "partNumber": part_number
                 })
-                print(f"Successfully created part number: {part_number} for {'JFD reference' if part_id and part_id.upper() == 'JFD' else 'regular'} part")
         
         return results
         
     except Exception as error:
-        print(f'Error processing request: {error}')
+        print('Error processing request:', error)
         return []
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
