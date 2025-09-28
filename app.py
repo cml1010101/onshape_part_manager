@@ -189,6 +189,7 @@ async def generate_part_number(request: Request):
         results = []
         
         for record in request_body:
+            id = record.get('id')
             document_id = record.get('documentId')
             element_id = record.get('elementId')
             workspace_id = record.get('workSpaceId')
@@ -267,7 +268,7 @@ async def generate_part_number(request: Request):
             
             if success:
                 results.append({
-                    "id": part_uid,
+                    "id": id,
                     "documentId": document_id,
                     "elementId": element_id,
                     "workspaceId": workspace_id,
