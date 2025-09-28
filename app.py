@@ -8,7 +8,7 @@ import gspread
 
 ONSHAPE_API_KEY = os.getenv("ONSHAPE_API_KEY")
 ONSHAPE_API_SECRET = os.getenv("ONSHAPE_API_SECRET")
-ONSHAPE_BASE_URL = "https://cad.onshape.com/api/v12"
+ONSHAPE_BASE_URL = "https://cad.onshape.com/api/v10"
 
 
 def get_auth_header() -> str:
@@ -50,10 +50,10 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
     
     if part_id:
         # For parts in part studios
-        url = f"{ONSHAPE_BASE_URL}/parts/d/{document_id}/w/{workspace_id}/e/{element_id}/partid/{part_id}"
+        url = f"{ONSHAPE_BASE_URL}/metadata/d/{document_id}/w/{workspace_id}/e/{element_id}/p/{part_id}"
     else:
         # For assemblies or part studios
-        url = f"{ONSHAPE_BASE_URL}/elements/d/{document_id}/w/{workspace_id}/e/{element_id}"
+        url = f"{ONSHAPE_BASE_URL}/metadata/d/{document_id}/w/{workspace_id}/e/{element_id}"
     
     headers = {
         "Accept": "application/json",
@@ -67,17 +67,17 @@ async def get_part_info(document_id: str, workspace_id: str, element_id: str, pa
             raise Exception(f"HTTP error! status: {response.status_code}")
         
         data = response.json()
-        
-        if part_id:
-            return {
-                "name": data.get("name", "Unnamed Part"),
-                "description": data.get("description", "")
-            }
-        else:
-            return {
-                "name": data.get("name", "Unnamed Element"),
-                "description": data.get("description", "")
-            }
+        name = None
+        description = None
+        for property in data.properties:
+            if property.get("name") == "name":
+                name = property.get("value")
+            elif property.get("name") == "description":
+                description = property.get("value")
+        return {
+            "name": name or "Unknown",
+            "description": description or ""
+        }
     except Exception as error:
         print(f"Error fetching part info: {error}")
         return {
@@ -152,11 +152,11 @@ def get_next_free_part_uid() -> int:
         return None
 
 
-def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str, project_code: str, element_id: str, workspace_id: str, document_id: str, part_name: str, part_description: str, part_id: Optional[str], part_type: str):
+def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str, project_code: str, element_id: str, workspace_id: str, document_id: str, company_id: str, part_name: str, part_description: str, part_id: Optional[str], part_type: str):
     """Add part to Google Sheets"""
     try:
         worksheet = sh.worksheet('Master')
-        new_row = [part_uid, part_number, subsystem_id, project_code, element_id, workspace_id, document_id, part_name, part_description, part_id or None, part_type]
+        new_row = [part_uid, part_type, part_number, project_code, subsystem_id, part_name, part_description, company_id, document_id, workspace_id, element_id, part_id or '']
         worksheet.append_row(new_row)
         print(f"Part added to Google Sheets: {part_number}")
         return True
@@ -180,6 +180,7 @@ async def generate_part_number(request: Request):
             document_id = record.get('documentId')
             element_id = record.get('elementId')
             workspace_id = record.get('workSpaceId')
+            company_id = record.get('companyId')
             part_id = record.get('partId')
             element_type = record.get('elementType')
             categories = record.get('categories', [])
@@ -222,6 +223,8 @@ async def generate_part_number(request: Request):
                     part_type = 'Part'
                 elif element_type == 1:
                     part_type = 'Assembly'
+                elif element_type == 2:
+                    part_type = 'Drawing'
                 else:
                     part_type = 'Part'
             
@@ -243,6 +246,7 @@ async def generate_part_number(request: Request):
                 element_id,
                 workspace_id,
                 document_id,
+                company_id,
                 part_info['name'],
                 part_info['description'],
                 part_id,
