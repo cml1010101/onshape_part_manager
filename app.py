@@ -97,7 +97,7 @@ def compose_part_number(subsystem_number: str, project_code: str, part_uid: int,
     type_map = {
         'Part': 'PRT',
         'Assembly': 'ASM',
-        'Drawing': 'DRW',
+        'Drawing': 'DWG',
         'default': 'PRT'
     }
     
