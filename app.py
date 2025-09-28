@@ -205,7 +205,7 @@ async def generate_part_number(request: Request):
             if existing_part:
                 print(f"Part already exists: {existing_part.get('part_number', 'Unknown')}")
                 results.append({
-                    "id": existing_part.get('partUID'),
+                    "id": id,
                     "documentId": document_id,
                     "elementId": element_id,
                     "workspaceId": workspace_id,
