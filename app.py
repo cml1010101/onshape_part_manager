@@ -179,6 +179,10 @@ def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str
 
 app = FastAPI()
 
+@app.get("/health")
+def get_health():
+    return "Doin' fine, how 'bout you?"
+
 @app.post("/generatePartNumber")
 async def generate_part_number(request: Request):
     """Generate part numbers for Onshape parts/assemblies"""
