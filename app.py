@@ -164,11 +164,11 @@ def get_next_free_part_uid() -> int:
         return None
 
 
-def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str, project_code: str, element_id: str, workspace_id: str, document_id: str, company_id: str, part_name: str, part_description: str, part_id: Optional[str], part_type: str):
+def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str, project_code: str, element_id: str, workspace_id: str, document_id: str, company_id: str, part_name: str, part_description: str, part_id: Optional[str], part_type: str, url: str):
     """Add part to Google Sheets"""
     try:
         worksheet = sh.worksheet('Master')
-        new_row = [part_uid, part_type, part_number, project_code, subsystem_id, part_name, part_description, company_id, document_id, workspace_id, element_id, part_id or '']
+        new_row = [part_uid, url, part_type, part_number, project_code, subsystem_id, part_name, part_description, company_id, document_id, workspace_id, element_id, part_id or '']
         worksheet.append_row(new_row)
         print(f"Part added to Google Sheets: {part_number}")
         return True
@@ -176,6 +176,9 @@ def add_part_to_google_sheets(part_uid: int, part_number: str, subsystem_id: str
         print(f"Error adding part to Google Sheets: {error}")
         return False
 
+def compose_part_url(document_id: str, workspace_id: str, element_id: str) -> str:
+    """Compose the URL to the part in Onshape"""
+    return f"https://cad.onshape.com/documents/{document_id}/w/{workspace_id}/e/{element_id}"
 
 app = FastAPI()
 
@@ -267,7 +270,8 @@ async def generate_part_number(request: Request):
                 part_info['name'],
                 part_info['description'],
                 part_id,
-                part_type
+                part_type,
+                compose_part_url(document_id, workspace_id, element_id)
             )
             
             if success:
